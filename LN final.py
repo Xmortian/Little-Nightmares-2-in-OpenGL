@@ -13,10 +13,11 @@ game_started = False
 intro_finished = False
 intro_factor = 0.0 
 intro_speed = 0.0009  
+blink_timer = 0
 
 # Starting position (Far to the right)
 camera_start_pos = [1500, 0, 400]
-
+game_time = 0
 SAFE_ZONES = [
     {'pos': [0, 0], 'radius': 170},
     {'pos': [-2200, -1000], 'radius': 170},
@@ -52,7 +53,7 @@ girl_pos = [0, 0, 0]
 PICKUP_COUNT = 5
 PICKUP_RADIUS = 50 
 MANNEQUIN_COUNT = 10
-MANNEQUIN_SPEED = 0.8 # Slower speed
+MANNEQUIN_SPEED = 0.8 
 MAP_SIZE = 2400
 
 level = 1
@@ -83,7 +84,6 @@ def init_game():
     level = 1
     MANNEQUIN_SPEED = 0.8
     
-    # Init House Furniture - PUSHED TO CORNERS
     furniture = []
     # Room 1: North-East Corner
     furniture.append({'type': 'almirah', 'pos': [MAP_SIZE-100, MAP_SIZE-500, 0], 'rot': 90, 'size': [120, 80, 250]})
@@ -91,14 +91,13 @@ def init_game():
     # Room 2: North-West Corner
     furniture.append({'type': 'sofa', 'pos': [-MAP_SIZE+300, MAP_SIZE-150, 0], 'rot': 0, 'size': [250, 100, 60]})
     furniture.append({'type': 'almirah', 'pos': [-MAP_SIZE+100, MAP_SIZE-500, 0], 'rot': -90, 'size': [120, 80, 250]})
-    
-    # Room 3: South-West Corner
+    furniture.append({'type': 'vase', 'pos': [MAP_SIZE-150, MAP_SIZE-800, 0], 'size': [40, 40, 60]})    # Room 3: South-West Corner
     furniture.append({'type': 'bed', 'pos': [-MAP_SIZE+250, -MAP_SIZE+250, 0], 'rot': 90, 'size': [200, 120, 50]})
-    
-    # Dining Area (South-East Corner)
+    furniture.append({'type': 'vase', 'pos': [-MAP_SIZE+500, -MAP_SIZE+100, 0], 'size': [40, 40, 60]})    # Dining Area (South-East Corner)
     table_pos = [MAP_SIZE-600, -MAP_SIZE+600, 0]
     furniture.append({'type': 'dining_table', 'pos': table_pos, 'rot': 0, 'size': [250, 150, 75]})
     furniture.append({'type': 'dining_chandelier', 'pos': [table_pos[0], table_pos[1], 250], 'rot': 0, 'size': [100, 100, 100]})
+
 
     walls = []
     wall_thickness = 20
@@ -138,10 +137,7 @@ def draw_mannequin(m):
     glPushMatrix()
     glTranslatef(m['pos'][0], m['pos'][1], m['pos'][2])
     
-    # Material Color: A grimy, aged ivory/bone color similar to the game
-    # This replaces the clean white with a more weathered look
     glColor3f(0.4, 0.5, 0.6)    
-    # 1. Torso (Two sections for a "ribcage" vs "waist" look)
     # Upper Chest
     glPushMatrix()
     glTranslatef(0, 0, 85)
@@ -163,7 +159,7 @@ def draw_mannequin(m):
         glRotatef(35, 1, 0, 1) 
     else:
         # Creepy twitching while moving
-        glRotatef(math.sin(glutGet(GLUT_ELAPSED_TIME)*0.008)*15, 0, 1, 0)
+        glRotatef(math.sin(game_time * 0.008) * 15, 0, 1, 0)
     
     # Head Sphere
     gluSphere(gluNewQuadric(), 13, 12, 12)
@@ -211,7 +207,7 @@ def draw_mannequin(m):
         glutSolidCube(10)
         glPopMatrix()
 
-    # 4. Legs (Long and spindly)
+    # 4. Legs 
     for side in [-1, 1]:
         glPushMatrix()
         glTranslatef(0, side * 10, 40)
@@ -254,19 +250,15 @@ def is_in_flashlight(m):
     dy = m['pos'][1] - char_pos[1]
     dist = math.sqrt(dx*dx + dy*dy)
     
-    if dist > 450: return False # Character light range is 450
+    if dist > 450: return False 
     
-    # Angle of the mannequin relative to player
     angle_to_m = math.degrees(math.atan2(dy, dx))
     
-    # Normalized angle difference (character looks towards char_rotation)
     diff = (angle_to_m - char_rotation + 180) % 360 - 180
     
-    # beam is half-angle ~12.5 degrees (tan inverse of 100/450)
     return abs(diff) < 13 
 
 def check_collision(x, y, radius):
-    # Check map boundaries
     if x < -MAP_SIZE or x > MAP_SIZE or y < -MAP_SIZE or y > MAP_SIZE:
         return True
     
@@ -280,7 +272,6 @@ def check_collision(x, y, radius):
     # Check Furniture
     for f in furniture:
         fx, fy = f['pos'][0], f['pos'][1]
-        # Radius ~ average of width/depth * 0.6 for rough circle
         f_rad = (f['size'][0] + f['size'][1]) / 2 * 0.6 
         dist = math.sqrt((x-fx)**2 + (y-fy)**2)
         if dist < (radius + f_rad):
@@ -290,7 +281,7 @@ def check_collision(x, y, radius):
 
 def update_game_logic():
     global bullets, ammo_count, ammo_pickups, mannequins, mannequins_killed, door_visible, door_pos
-    global mannequins_spawned, spawn_timer, lives, game_over, damage_flash_timer
+    global mannequins_spawned, spawn_timer, lives, game_over, damage_flash_timer, blink_timer, game_time
     
     if game_won or game_over: return
 
@@ -301,7 +292,6 @@ def update_game_logic():
         m['is_frozen'] = is_in_flashlight(m)
         
         if not m['is_frozen'] and not player_in_safe_zone():
-            # Move toward player
             dx = char_pos[0] - m['pos'][0]
             dy = char_pos[1] - m['pos'][1]
             dist = math.sqrt(dx*dx + dy*dy)
@@ -310,7 +300,6 @@ def update_game_logic():
                 nx = m['pos'][0] + (dx/dist) * step
                 ny = m['pos'][1] + (dy/dist) * step
                 
-                # Check collision with walls only (not furniture)
                 wall_collision = False
                 for wall in walls:
                     if (nx + 20 > wall['x1'] and nx - 20 < wall['x2'] and
@@ -319,8 +308,6 @@ def update_game_logic():
                         break
                 
                 if wall_collision:
-                    # Try moving along the wall - attempt perpendicular directions
-                    # Try moving in X direction only
                     nx_alt = m['pos'][0] + (dx/dist) * step
                     ny_alt = m['pos'][1]
                     wall_collision_x = False
@@ -333,7 +320,6 @@ def update_game_logic():
                     if not wall_collision_x:
                         nx, ny = nx_alt, ny_alt
                     else:
-                        # Try moving in Y direction only
                         nx_alt = m['pos'][0]
                         ny_alt = m['pos'][1] + (dy/dist) * step
                         wall_collision_y = False
@@ -346,13 +332,11 @@ def update_game_logic():
                         if not wall_collision_y:
                             nx, ny = nx_alt, ny_alt
                         else:
-                            # Both blocked, stay in place
                             nx, ny = m['pos'][0], m['pos'][1]
                 
                 m['pos'][0] = nx
                 m['pos'][1] = ny
             
-            # Check collision with player (Damage)
             if (not player_in_safe_zone() and
                 math.sqrt((char_pos[0]-m['pos'][0])**2 + (char_pos[1]-m['pos'][1])**2) < 30):
 
@@ -366,6 +350,9 @@ def update_game_logic():
 
         active_mannequins.append(m)
     mannequins = active_mannequins
+
+    blink_timer += 1
+    game_time += 1
 
     # Update Bullets
     bullet_speed = 30
@@ -384,6 +371,8 @@ def update_game_logic():
                 # Mannequin Killed
                 hit = True
                 mannequins_killed += 1
+                draw_text(420, 400, "!!! MEGA KILL !!!")
+
                 
                 # Check if we go to next level or show the final door
                 if mannequins_killed >= MANNEQUIN_COUNT:
@@ -456,57 +445,45 @@ def start_next_level():
             'alive': True
         })
 
-    # If passed final level -> show door (Safety check)
     if level > MAX_LEVEL:
         door_visible = True
         door_pos = [MAP_SIZE - 300, MAP_SIZE - 100, 0]
         
 def draw_safe_zones():
-    # simple visible circle on floor for debugging
-    glDisable(GL_DEPTH_TEST)
-    glEnable(GL_BLEND)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glColor3f(0.0, 0.6, 1.0)  # Bright Cyan/Blue (solid)
+    glLineWidth(3.0)
 
     for z in SAFE_ZONES:
         glPushMatrix()
-        glTranslatef(z['pos'][0], z['pos'][1], 1.2)
-        glColor4f(0.2, 0.8, 1.0, 0.18)
-        gluDisk(gluNewQuadric(), 0, z['radius'], 32, 1)
+        glTranslatef(z['pos'][0], z['pos'][1], 0.5)
+        
+        glBegin(GL_LINE_LOOP)
+        segments = 32
+        for i in range(segments):
+            angle = 2.0 * math.pi * i / segments
+            glVertex3f(math.cos(angle) * z['radius'], math.sin(angle) * z['radius'], 0)
+        glEnd()
+        
+        glBegin(GL_LINE_LOOP)
+        for i in range(segments):
+            angle = 2.0 * math.pi * i / segments
+            glVertex3f(math.cos(angle) * z['radius'] * 0.7, math.sin(angle) * z['radius'] * 0.7, 0)
+        glEnd()
+        
         glPopMatrix()
 
-    glDisable(GL_BLEND)
-    glEnable(GL_DEPTH_TEST)
+    glLineWidth(1.0) 
 
 
 
-
-def push_mannequin_out_of_safezones(m):
-    for z in SAFE_ZONES:
-        dx = m['pos'][0] - z['pos'][0]
-        dy = m['pos'][1] - z['pos'][1]
-        dist = math.sqrt(dx*dx + dy*dy)
-
-        buffer = 80
-        if dist < (z['radius'] + buffer) and dist > 0.01:
-            nx = dx / dist
-            ny = dy / dist
-            target_dist = z['radius'] + buffer + 10
-            m['pos'][0] = z['pos'][0] + nx * target_dist
-            m['pos'][1] = z['pos'][1] + ny * target_dist
-
-        repel_range = z['radius'] + 250
-        if 0.01 < dist < repel_range:
-            m['pos'][0] += (dx / dist) * 2.5
-            m['pos'][1] += (dy / dist) * 2.5
 
 
 def draw_door():
     if not door_visible: return
     glPushMatrix()
     glTranslatef(door_pos[0], door_pos[1], door_pos[2])
-    glRotatef(180, 0, 0, 1) # Rotate to face inward 
+    glRotatef(180, 0, 0, 1)
 
-    # Door Frame (Dark Wood)
     glColor3f(0.5, 0.05, 0.05)
     glPushMatrix(); glTranslatef(0, 0, 150); glScalef(240/30, 20/30, 300/30); glutSolidCube(30); glPopMatrix() # Frame outline logic is complex with cubes.
 
@@ -554,7 +531,7 @@ def draw_almirah(x, y, z, rot, sx, sy, sz):
     glPushMatrix()
     glTranslatef(x, y, z + sz/2)
     glRotatef(rot, 0, 0, 1)
-    glColor3f(0.25, 0.15, 0.05) # Dark wood
+    glColor3f(0.25, 0.15, 0.05)
     glScalef(sx/30, sy/30, sz/30)
     glutSolidCube(30)
 
@@ -582,7 +559,11 @@ def draw_flower_vase(x, y, z):
     # Rim
     glPushMatrix()
     glTranslatef(0, 0, 60)
-    gluDisk(gluNewQuadric(), 0, 15, 16, 1)
+    glBegin(GL_POLYGON)
+    for i in range(16):
+        angle = (2 * math.pi * i) / 16
+        glVertex3f(15 * math.cos(angle), 15 * math.sin(angle), 0)
+    glEnd()
     glPopMatrix()
     
     # Flowers and Stems
@@ -600,7 +581,7 @@ def draw_flower_vase(x, y, z):
     glColor3f(0.1, 0.4, 0.1)
     glPushMatrix(); glRotatef(-15, 0, 1, 0); gluCylinder(gluNewQuadric(), 1.5, 1.5, 35, 8, 1); glPopMatrix()
     # Flower 2
-    glColor3f(1, 1, 0) # Yellow
+    glColor3f(1, 1, 0)
     glPushMatrix(); glTranslatef(9, 0, 35); gluSphere(gluNewQuadric(), 6, 8, 8); glPopMatrix()
     
     # Stem 3
@@ -655,7 +636,6 @@ def draw_dining_table(x, y, z, rot, sx, sy, sz):
     glTranslatef(x, y, z)
     glRotatef(rot, 0, 0, 1)
     
-    # Top (Dark Wood)
     glColor3f(0.15, 0.1, 0.05)
     glPushMatrix()
     glTranslatef(0, 0, sz)
@@ -746,13 +726,22 @@ def draw_dining_chandelier(x, y, z):
         glPopMatrix()
         
     # Light Beam 
-    glEnable(GL_BLEND)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    glColor4f(1.0, 1.0, 0.5, 0.2) # Dim yellow light
+    glColor3f(1.0, 1.0, 0.3)  # Bright yellow
     glPushMatrix()
-    glRotatef(180, 1, 0, 0) # Point down
-    gluCylinder(gluNewQuadric(), 10, 150, 250, 20, 1)
+    glRotatef(180, 1, 0, 0)  # Point down
+    # Draw just the outline
+    glBegin(GL_LINES)
+    for angle in range(0, 360, 45):
+        rad = math.radians(angle)
+        x_top = 10 * math.cos(rad)
+        y_top = 10 * math.sin(rad)
+        x_bottom = 150 * math.cos(rad)
+        y_bottom = 150 * math.sin(rad)
+        glVertex3f(x_top, y_top, 0)
+        glVertex3f(x_bottom, y_bottom, 250)
+    glEnd()
     glPopMatrix()
+
   
     
     glPopMatrix()
@@ -852,7 +841,6 @@ def draw_chandelier():
     glColor3f(0.4, 0.35, 0.2)
     glPushMatrix()
     glRotatef(90, 1, 0, 0)
-    glutSolidTorus(3, 35, 8, 16)
     glPopMatrix()
     
     # Arms extending outward (6 arms)
@@ -877,7 +865,6 @@ def draw_chandelier():
         # Base plate
         glPushMatrix()
         glRotatef(90, 1, 0, 0)
-        glutSolidTorus(2, 6, 6, 12)
         glPopMatrix()
         
         # Candle stick holder
@@ -923,73 +910,6 @@ def draw_chandelier():
     
     glPopMatrix()
 
-def draw_player():
-    glPushMatrix()
-    glTranslatef(char_pos[0], char_pos[1], 0)
-    glRotatef(char_rotation, 0, 0, 1)
-    
-    # Legs
-    glColor3f(0.2, 0.2, 0.3) 
-    # Left leg
-    glPushMatrix()
-    glTranslatef(-8, 0, 15)
-    glScalef(6/30, 6/30, 30/30)
-    glutSolidCube(30)
-    glPopMatrix()
-    # Right leg
-    glPushMatrix()
-    glTranslatef(8, 0, 15)
-    glScalef(6/30, 6/30, 30/30)
-    glutSolidCube(30)
-    glPopMatrix()
-    
-    # Torso
-    glColor3f(0.4, 0.3, 0.25) 
-    glPushMatrix()
-    glTranslatef(0, 0, 45)
-    glScalef(20/30, 12/30, 35/30)
-    glutSolidCube(30)
-    glPopMatrix()
-    
-    # Arms
-    glColor3f(0.6, 0.45, 0.35)  # Skin tone
-    # Left arm
-    glPushMatrix()
-    glTranslatef(-15, 0, 50)
-    glScalef(5/30, 5/30, 25/30)
-    glutSolidCube(30)
-    glPopMatrix()
-    # Right arm
-    glPushMatrix()
-    glTranslatef(15, 0, 50)
-    glScalef(5/30, 5/30, 25/30)
-    glutSolidCube(30)
-    glPopMatrix()
-    
-    # Neck
-    glColor3f(0.6, 0.45, 0.35)  # Skin tone
-    glPushMatrix()
-    glTranslatef(0, 0, 65)
-    glScalef(6/30, 6/30, 8/30)
-    glutSolidCube(30)
-    glPopMatrix()
-    
-    # Head
-    glColor3f(0.65, 0.5, 0.4)  # Skin tone
-    glPushMatrix()
-    glTranslatef(0, 0, 75)
-    gluSphere(gluNewQuadric(), 10, 12, 12)
-    glPopMatrix()
-    
-    # Hair (black)
-    glColor3f(0.05, 0.05, 0.05)
-    glPushMatrix()
-    glTranslatef(0, 0, 78)
-    glScalef(1.0, 1.0, 0.8)
-    gluSphere(gluNewQuadric(), 10.5, 12, 12)
-    glPopMatrix()
-    
-    glPopMatrix()
 
 def draw_girl():
     if not game_won: return
@@ -1011,7 +931,8 @@ def draw_girl():
     # Body / Dress 
     glColor3f(1.0, 0.8, 0.9) 
     # Skirt part
-    glPushMatrix(); glTranslatef(0, 0, 30); glRotatef(-90, 1, 0, 0); glutSolidCone(20, 45, 20, 20); glPopMatrix()
+    glPushMatrix(); glTranslatef(0, 0, 30); glRotatef(-90, 1, 0, 0);gluCylinder(gluNewQuadric(), 20, 5, 45, 20, 20) 
+    glPopMatrix()
     # Torso
     glPushMatrix(); glTranslatef(0, 0, 60); glScalef(10/30, 18/30, 25/30); glutSolidCube(30); glPopMatrix() 
     
@@ -1074,7 +995,6 @@ def draw_house():
     glVertex3f(MAP_SIZE, -MAP_SIZE, 0); glVertex3f(MAP_SIZE, MAP_SIZE, 0); glVertex3f(MAP_SIZE, MAP_SIZE, wall_height); glVertex3f(MAP_SIZE, -MAP_SIZE, wall_height)
     glEnd()
     
-    # Internal Walls (Room partitions)
     glBegin(GL_QUADS)
     for wall in walls:
         x1, y1 = wall['x1'], wall['y1']
@@ -1095,7 +1015,7 @@ def draw_house():
         x, y, z_bot, z_top, w_width = i, MAP_SIZE-5, 120, 220, 150
         
         # Glass
-        glColor4f(0.5, 0.7, 0.9, 0.6)
+        glColor3f(0.5, 0.7, 0.9)
         glBegin(GL_QUADS)
         glVertex3f(x, y, z_bot); glVertex3f(x+w_width, y, z_bot); glVertex3f(x+w_width, y, z_top); glVertex3f(x, y, z_top)
         glEnd()
@@ -1151,15 +1071,13 @@ def draw_house():
     draw_chandelier()
 
 def draw_visibility_circle():
-    # Since GL_BLEND is not allowed, we use solid black quads
-    # placed at Z=0.1 to sit directly on the ground.
     glPushMatrix()
     # Center the mask on Mono
     glTranslatef(char_pos[0], char_pos[1], 0.1) 
     
     glColor3f(0.0, 0.0, 0.0) # Pure black darkness
     
-    view_r = 250    # How far the ground is visible around Mono
+    view_r = 500    # How far the ground is visible around Mono
     map_limit = 4000 # Large enough to cover your MAP_SIZE
     
     glBegin(GL_QUADS)
@@ -1195,9 +1113,6 @@ def draw_character():
     glTranslatef(char_pos[0], char_pos[1], char_pos[2])
     glRotatef(char_rotation, 0, 0, 1)
 
-    # ===============================
-    # SAFE ZONE COLOR STATE
-    # ===============================
     if player_in_safe_zone():
         body_color = (0.28, 0.27, 0.22)
         head_color = (0.52, 0.50, 0.46)
@@ -1206,9 +1121,6 @@ def draw_character():
         body_color = (0.25, 0.2, 0.1)  # Normal body
         head_color = (0.5, 0.4, 0.3)   # Normal head
 
-    # ===============================
-    # LEGS
-    # ===============================
     glColor3f(*body_color)
     for side in [-1, 1]:
         glPushMatrix()
@@ -1217,19 +1129,14 @@ def draw_character():
         glutSolidCube(20)
         glPopMatrix()
 
-    # ===============================
-    # BODY
-    # ===============================
     glColor3f(*body_color)
     glPushMatrix()
     glTranslatef(0, 0, 50)
     glScalef(1, 0.8, 1.8)
-    glutSolidSphere(25, 12, 12)
+    gluSphere(gluNewQuadric(), 25, 12, 12) 
     glPopMatrix()
 
-    # ===============================
     # HEAD
-    # ===============================
     if not is_first_person:
         glColor3f(*head_color)
         glPushMatrix()
@@ -1237,29 +1144,16 @@ def draw_character():
         glScalef(1.1, 1, 1.2)
         glutSolidCube(40)
         glPopMatrix()
-
-
     if flashlight_on:
-        glEnable(GL_BLEND)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glPushMatrix()
-        glTranslatef(12, 15, 50) 
-        glRotatef(90, 0, 1, 0)   
-        glColor4f(1.0, 1.0, 0.8, 0.4)
-        gluCylinder(gluNewQuadric(), 5, 100, 450, 20, 1)
-        glPopMatrix()
-        glDisable(GL_BLEND)
-
-
+        glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);glPushMatrix()
+        glTranslatef(12, 15, 50);glRotatef(90, 0, 1, 0);glColor4f(1.0, 1.0, 0.8, 0.4);gluCylinder(gluNewQuadric(), 5, 100, 450, 20, 1);glPopMatrix();glDisable(GL_BLEND)
     glPopMatrix()
 
 
 def draw_crosshair():
-    # Only show in first person and while playing
     if not is_first_person or not game_started or game_won or game_over:
         return
 
-    # Switch to 2D projection
     glMatrixMode(GL_PROJECTION)
     glPushMatrix()
     glLoadIdentity()
@@ -1270,10 +1164,10 @@ def draw_crosshair():
     glLoadIdentity()
 
     glDisable(GL_DEPTH_TEST)
-    glColor4f(1.0, 1, 1, 0.8) # Bright Red
+    glColor3f(1.0, 1, 1) # Bright Red
     glLineWidth(2.0)
 
-    # Draw Crosshair (+)
+    # Draw Crosshair
     glBegin(GL_LINES)
     # Horizontal line
     glVertex2f(490, 400); glVertex2f(510, 400)
@@ -1291,33 +1185,38 @@ def draw_damage_overlay():
     global damage_flash_timer
     if damage_flash_timer > 0:
         damage_flash_timer -= 1
-        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); gluOrtho2D(0, 1000, 0, 800); glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity()
+        glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity()
+        gluOrtho2D(0, 1000, 0, 800)
+        glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity()
         
-        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glColor4f(1.0, 0.0, 0.0, 0.5)
-        glBegin(GL_QUADS)
-        glVertex2f(0, 0); glVertex2f(1000, 0); glVertex2f(1000, 800); glVertex2f(0, 800)
+        glDisable(GL_DEPTH_TEST)
+        glColor3f(1.0, 0.0, 0.0)  # Solid red
+        glLineWidth(10.0)
+        
+        # Draw thick red border frame
+        glBegin(GL_LINE_LOOP)
+        glVertex2f(10, 10)
+        glVertex2f(990, 10)
+        glVertex2f(990, 790)
+        glVertex2f(10, 790)
         glEnd()
-        glDisable(GL_BLEND)
         
-        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW)
+        draw_text(420, 400, "!!! DAMAGE !!!")
 
+        
+        
+        glLineWidth(1.0)
+        glEnable(GL_DEPTH_TEST)
+        
+        glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
 def showScreen():
-    # 1. Basic Setup
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glLoadIdentity()
     glViewport(0, 0, 1000, 800)
     
-    # Note: GL_BLEND is enabled here for the Visibility Circle and Text
     glEnable(GL_DEPTH_TEST)
-    glEnable(GL_BLEND)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    
-    # 2. Camera and Logic State
-    # setupCamera handles the LERP intro movement
     setupCamera()
-    
-    # Only update game mechanics (mannequin movement, shooting, etc.) if game has started
     if game_started and not game_won and not game_over:
         update_game_logic()
     
@@ -1349,21 +1248,15 @@ def showScreen():
     draw_door()
     draw_girl()
     
-    # Draw Horror Fog Overlay (Radial visibility)
     draw_visibility_circle()
     
-    # Draw red flash effect if player takes damage
     draw_damage_overlay()
     draw_crosshair()
     
-    # 4. 2D UI and Menu Logic
     if not intro_finished:
-        # Optional: Hide UI during cinematic intro for a "movie" feel
         pass
         
     elif intro_finished and not game_started:
-        # SHOW CONTROLS OVERLAY (After intro, before start)
-        # We use a slight dark tint for the menu background using text blocks
         draw_text(350, 550, "--- MONO: Little Nightmare ---")
         draw_text(380, 500, "CONTROLS:")
         draw_text(380, 470, "[SPACE] - Start Game / Shoot")
@@ -1374,8 +1267,7 @@ def showScreen():
         draw_text(380, 320, "[E]     - Toggle Camera")
 
         
-        # Make the "Start" prompt blink using simple math
-        if (int(glutGet(GLUT_ELAPSED_TIME) / 500) % 2 == 0):
+        if (blink_timer // 30) % 2 == 0:  # Blink every 30 frames
             draw_text(360, 250, "PRESS E TO START THE GAME")
             
     elif game_won:
@@ -1413,7 +1305,6 @@ def setupCamera():
 
     if is_first_person:
         # --- FIRST PERSON LOGIC ---
-        # Position camera at Mono's head height
         cx = char_pos[0] + 25 * math.cos(rad) # Offset forward slightly
         cy = char_pos[1] + 25 * math.sin(rad)
         cz = 90 # Head height
@@ -1422,8 +1313,6 @@ def setupCamera():
         tx = cx + 100 * math.cos(rad)
         ty = cy + 100 * math.sin(rad)
         tz = cz
-        
-        # ACTUALLY CALL gluLookAt here
         gluLookAt(cx, cy, cz, tx, ty, tz, 0, 0, 1)
     
     else:
@@ -1451,8 +1340,6 @@ def setupCamera():
             cx, cy, cz = current_x, current_y, current_z
         else:
             cx, cy, cz = target_x, target_y, target_z
-
-        # Target point is Mono's chest area
         tx, ty, tz = char_pos[0], char_pos[1], char_pos[2] + 50
         
         gluLookAt(cx, cy, cz, tx, ty, tz, 0, 0, 1)
@@ -1460,30 +1347,23 @@ def setupCamera():
 def keyboardListener(key, x, y):
     global char_pos, char_rotation, flashlight_on, ammo_count, bullets, game_won, game_started, is_first_person
     
-    # 1. Camera Intro Lock (Wait for cinematic to finish)
     if not intro_finished:
         return
         
     key = key.lower()
     
-    # 2. HANDLE THE 'E' KEY LOGIC
     if key == b'e':
         if not game_started:
-            # First press: Starts game AND goes First Person
             game_started = True
             is_first_person = True
         else:
-            # Subsequent presses: Just toggles camera
             is_first_person = not is_first_person
         return
 
-    # 3. HANDLE START GAME (Traditional Spacebar Start)
     if not game_started:
         if key == b' ':
             game_started = True
         return 
-
-    # 4. GAMEPLAY CONTROLS
     if key == b'r':
         init_game()
         return
@@ -1517,7 +1397,6 @@ def keyboardListener(key, x, y):
         bullets.append({'pos': [bx, by, 55], 'angle': char_rotation})
             
     if key == b'p' and door_visible:
-        # Check distance to door
         dist = math.sqrt((char_pos[0] - door_pos[0])**2 + (char_pos[1] - door_pos[1])**2)
         if dist < 150:
             game_won = True
