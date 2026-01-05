@@ -349,151 +349,181 @@ def check_collision(x, y, radius):
             return True
             
     return False
+def push_mannequin_out_of_safezones(m):
+    for z in SAFE_ZONES:
+        dx = m['pos'][0] - z['pos'][0]
+        dy = m['pos'][1] - z['pos'][1]
+        dist = math.sqrt(dx*dx + dy*dy)
+
+        buffer = 80
+        if dist < (z['radius'] + buffer) and dist > 0.01:
+            nx = dx / dist
+            ny = dy / dist
+            target_dist = z['radius'] + buffer + 10
+            m['pos'][0] = z['pos'][0] + nx * target_dist
+            m['pos'][1] = z['pos'][1] + ny * target_dist
+
+        # extra repel so they don't hover near safe zone border
+        repel_range = z['radius'] + 250
+        if 0.01 < dist < repel_range:
+            m['pos'][0] += (dx / dist) * 2.5
+            m['pos'][1] += (dy / dist) * 2.5
 
 def update_game_logic():
     global bullets, ammo_count, ammo_pickups, mannequins, mannequins_killed, door_visible, door_pos
     global mannequins_spawned, spawn_timer, lives, game_over, damage_flash_timer
-    global player_hidden
+    global player_hidden, level
 
-    if game_won or game_over: 
+    if game_won or game_over:
         return
+
     player_hidden = player_in_safe_zone()
 
-
-    # Update Mannequins
+    # ------------------ Update Mannequins ------------------
     active_mannequins = []
     for m in mannequins:
+
+        if 'wander_angle' not in m:
+            m['wander_angle'] = random.uniform(0, 360)
+
+        if player_hidden:
+            push_mannequin_out_of_safezones(m)
+
         m['is_frozen'] = is_in_flashlight(m)
-        
+
         if not m['is_frozen']:
-            # Move toward player
-            dx = char_pos[0] - m['pos'][0]
-            dy = char_pos[1] - m['pos'][1]
-            dist = math.sqrt(dx*dx + dy*dy)
-            if dist > 5:
-                step = MANNEQUIN_SPEED
-                nx = m['pos'][0] + (dx/dist) * step
-                ny = m['pos'][1] + (dy/dist) * step
-                
-                # Check collision with walls only (not furniture)
-                wall_collision = False
-                for wall in walls:
-                    if (nx + 20 > wall['x1'] and nx - 20 < wall['x2'] and
-                        ny + 20 > wall['y1'] and ny - 20 < wall['y2']):
-                        wall_collision = True
+            step = MANNEQUIN_SPEED
+
+            if player_hidden:
+                # wander instead of chase
+                if random.random() < 0.05:
+                    m['wander_angle'] += random.uniform(-40, 40)
+
+                radw = math.radians(m['wander_angle'])
+                dx = math.cos(radw)
+                dy = math.sin(radw)
+
+                nx = m['pos'][0] + dx * step
+                ny = m['pos'][1] + dy * step
+
+            else:
+                # normal chase
+                dx = char_pos[0] - m['pos'][0]
+                dy = char_pos[1] - m['pos'][1]
+                dist = math.sqrt(dx*dx + dy*dy)
+
+                if dist > 5:
+                    nx = m['pos'][0] + (dx/dist) * step
+                    ny = m['pos'][1] + (dy/dist) * step
+                else:
+                    nx, ny = m['pos'][0], m['pos'][1]
+
+            # stop mannequins from entering safe zones while wandering
+            if player_hidden:
+                blocked = False
+                for z in SAFE_ZONES:
+                    ddx = nx - z['pos'][0]
+                    ddy = ny - z['pos'][1]
+                    if math.sqrt(ddx*ddx + ddy*ddy) < (z['radius'] + 80):
+                        blocked = True
                         break
-                
-                if wall_collision:
-                    # Try moving along the wall - attempt perpendicular directions
-                    # Try moving in X direction only
-                    nx_alt = m['pos'][0] + (dx/dist) * step
-                    ny_alt = m['pos'][1]
-                    wall_collision_x = False
-                    for wall in walls:
-                        if (nx_alt + 20 > wall['x1'] and nx_alt - 20 < wall['x2'] and
-                            ny_alt + 20 > wall['y1'] and ny_alt - 20 < wall['y2']):
-                            wall_collision_x = True
-                            break
-                    
-                    if not wall_collision_x:
-                        nx, ny = nx_alt, ny_alt
-                    else:
-                        # Try moving in Y direction only
-                        nx_alt = m['pos'][0]
-                        ny_alt = m['pos'][1] + (dy/dist) * step
-                        wall_collision_y = False
-                        for wall in walls:
-                            if (nx_alt + 20 > wall['x1'] and nx_alt - 20 < wall['x2'] and
-                                ny_alt + 20 > wall['y1'] and ny_alt - 20 < wall['y2']):
-                                wall_collision_y = True
-                                break
-                        
-                        if not wall_collision_y:
-                            nx, ny = nx_alt, ny_alt
-                        else:
-                            # Both blocked, stay in place
-                            nx, ny = m['pos'][0], m['pos'][1]
-                
+                if blocked:
+                    m['wander_angle'] += random.uniform(120, 240)
+                    nx, ny = m['pos'][0], m['pos'][1]
+
+            # wall collision
+            wall_collision = False
+            for wall in walls:
+                if (nx + 20 > wall['x1'] and nx - 20 < wall['x2'] and
+                    ny + 20 > wall['y1'] and ny - 20 < wall['y2']):
+                    wall_collision = True
+                    break
+
+            if not wall_collision:
                 m['pos'][0] = nx
                 m['pos'][1] = ny
-            
-            # Check collision with player (Damage)
-            if math.sqrt((char_pos[0]-m['pos'][0])**2 + (char_pos[1]-m['pos'][1])**2) < 30:
-                if not player_hidden:
 
-                        lives -= 1
-                        damage_flash_timer = 5
-                        m['pos'] = [random.uniform(-MAP_SIZE, MAP_SIZE), random.uniform(-MAP_SIZE, MAP_SIZE), 0]
-                        if lives <= 0:
-                             game_over = True
-                else:
-                        # no damage, but push mannequin away so player can't camp forever
-                        m['pos'] = [random.uniform(-MAP_SIZE, MAP_SIZE), random.uniform(-MAP_SIZE, MAP_SIZE), 0]
+        # damage check
+        if math.sqrt((char_pos[0]-m['pos'][0])**2 + (char_pos[1]-m['pos'][1])**2) < 30:
+            if not player_hidden:
+                lives -= 1
+                damage_flash_timer = 5
+                m['pos'] = [random.uniform(-MAP_SIZE, MAP_SIZE),
+                            random.uniform(-MAP_SIZE, MAP_SIZE), 0]
+                if lives <= 0:
+                    game_over = True
+            else:
+                m['pos'] = [random.uniform(-MAP_SIZE, MAP_SIZE),
+                            random.uniform(-MAP_SIZE, MAP_SIZE), 0]
 
-                    
         active_mannequins.append(m)
+
     mannequins = active_mannequins
 
-    # Update Bullets
+    # ------------------ Update Bullets ------------------
     bullet_speed = 30
     new_bullets = []
     for b in bullets:
         rad = math.radians(b['angle'])
         b['pos'][0] += bullet_speed * math.cos(rad)
         b['pos'][1] += bullet_speed * math.sin(rad)
-        
-        # Bullet vs Mannequin collision
+
         hit = False
         remaining_mannequins = []
         for m in mannequins:
             mdist = math.sqrt((b['pos'][0]-m['pos'][0])**2 + (b['pos'][1]-m['pos'][1])**2)
             if not hit and mdist < 40:
-                # Mannequin Killed
                 hit = True
                 mannequins_killed += 1
                 if mannequins_killed >= MANNEQUIN_COUNT:
-                      if level < MAX_LEVEL:
-                            start_next_level()
-                      else:
-                            door_visible = True
-                            door_pos[0], door_pos[1], door_pos[2] = MAP_SIZE - 300, MAP_SIZE - 100, 0
- 
+                    if level < MAX_LEVEL:
+                        start_next_level()
+                    else:
+                        door_visible = True
+                        door_pos[0], door_pos[1], door_pos[2] = MAP_SIZE - 300, MAP_SIZE - 100, 0
             else:
                 remaining_mannequins.append(m)
+
         mannequins = remaining_mannequins
 
-        # Respawn Logic (Maintain 3 active)
+        # respawn
         if mannequins_killed < MANNEQUIN_COUNT and len(mannequins) < 3 and mannequins_spawned < MANNEQUIN_COUNT:
-             spawn_pos = [0,0,0]
-             valid = False
-             for _ in range(10):
+            spawn_pos = [0, 0, 0]
+            valid = False
+            for _ in range(10):
                 spawn_pos = [random.uniform(-MAP_SIZE, MAP_SIZE), random.uniform(-MAP_SIZE, MAP_SIZE), 0]
                 if not check_collision(spawn_pos[0], spawn_pos[1], 30) and \
-                   math.sqrt((spawn_pos[0]-char_pos[0])**2 + (spawn_pos[1]-char_pos[1])**2) > 400:
+                   math.sqrt((spawn_pos[0]-char_pos[0])**2 + (spawn_pos[1]-char_pos[1])**2) > 400 and \
+                   not any(math.sqrt((spawn_pos[0]-z['pos'][0])**2 + (spawn_pos[1]-z['pos'][1])**2) < (z['radius'] + 120) for z in SAFE_ZONES):
                     valid = True
                     break
-             if valid:
-                mannequins.append({'pos': spawn_pos, 'is_frozen': False})
+            if valid:
+                mannequins.append({
+                    'pos': spawn_pos,
+                    'is_frozen': False,
+                    'wander_angle': random.uniform(0, 360)
+                })
                 mannequins_spawned += 1
-        
+
         if not hit and abs(b['pos'][0]) < MAP_SIZE and abs(b['pos'][1]) < MAP_SIZE:
             new_bullets.append(b)
+
     bullets = new_bullets
 
-    # Update Pickups
+    # ------------------ Update Pickups ------------------
     remaining_pickups = []
     for p in ammo_pickups:
         p['rotation'] += 2
         dist = math.sqrt((char_pos[0] - p['pos'][0])**2 + (char_pos[1] - p['pos'][1])**2)
-        
-        # Pickup Condition: Low Ammo OR Low Health
-        if dist < PICKUP_RADIUS and (ammo_count < 10 or lives < 5): 
+
+        if dist < PICKUP_RADIUS and (ammo_count < 10 or lives < 5):
             if ammo_count < 10:
                 ammo_count += 5
             if lives < 5:
                 lives += 1
         else:
             remaining_pickups.append(p)
+
     ammo_pickups = remaining_pickups
 
 def draw_door():
@@ -1190,20 +1220,25 @@ def draw_character():
     glPushMatrix()
     glTranslatef(char_pos[0], char_pos[1], char_pos[2])
     glRotatef(char_rotation, 0, 0, 1)
+    hidden_now = player_in_safe_zone()   # or use player_hidden if you prefer
+    if hidden_now:
+          def C(r,g,b): glColor3f(0,0,0)  # BLACK
+    else:     
+          def C(r,g,b): glColor3f(r,g,b)
     # Legs
-    glColor3f(0.15, 0.1, 0.05)
+    C(0.15, 0.1, 0.05)
     for side in [-1, 1]:
         glPushMatrix(); glTranslatef(0, side * 8, 15); glScalef(0.4, 0.4, 1.5); glutSolidCube(20); glPopMatrix()
     # Body
-    glColor3f(0.25, 0.2, 0.1)
+    C(0.25, 0.2, 0.1)
     glPushMatrix(); glTranslatef(0, 0, 50); glScalef(1, 0.8, 1.8); gluSphere(gluNewQuadric(), 25, 12, 12); glPopMatrix()
     # Head
-    glPushMatrix(); glTranslatef(0, 0, 95); glColor3f(0.5, 0.4, 0.3); glScalef(1.1, 1, 1.2); glutSolidCube(40); glPopMatrix()
+    glPushMatrix(); glTranslatef(0, 0, 95); C(0.5, 0.4, 0.3); glScalef(1.1, 1, 1.2); glutSolidCube(40); glPopMatrix()
 
 
     
     # Flashlight
-    if flashlight_on:
+    if flashlight_on and not hidden_now:
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glPushMatrix()
@@ -1274,8 +1309,8 @@ def showScreen():
         glPopMatrix()
 
     # Draw Main Characters
-    if not player_hidden:
-         draw_character()  # Mono
+   
+    draw_character()  # Mono
 
     draw_door()
     draw_girl()
