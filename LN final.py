@@ -5,7 +5,7 @@ from OpenGL.GLUT import GLUT_BITMAP_HELVETICA_18
 import math
 import random
 
-
+is_first_person = False
 # --- Camera Intro Variables ---
 
 game_started = False
@@ -46,7 +46,7 @@ PICKUP_COUNT = 5
 PICKUP_RADIUS = 50 
 MANNEQUIN_COUNT = 10
 MANNEQUIN_SPEED = 0.8 # Slower speed
-MAP_SIZE = 3200
+MAP_SIZE = 2400
 
 def init_game():
     global camera_pos, char_pos, char_rotation, ammo_count, bullets, ammo_pickups, game_started
@@ -71,65 +71,40 @@ def init_game():
     bullets = []
     mannequins = [] 
     
-    # Init House Furniture 
+    # Init House Furniture - PUSHED TO CORNERS
     furniture = []
-
-    # --- Pushed to Walls (Scarce Layout) ---
-
-    # Room 1: Top Right (Near North and East Walls)
-    furniture.append({'type': 'sofa', 'pos': [800, 2300, 0], 'rot': 0, 'size': [250, 100, 60]})
-    furniture.append({'type': 'almirah', 'pos': [2300, 1000, 0], 'rot': 90, 'size': [120, 80, 250]})
+    # Room 1: North-East Corner
+    furniture.append({'type': 'sofa', 'pos': [MAP_SIZE-300, MAP_SIZE-150, 0], 'rot': 0, 'size': [250, 100, 60]})
+    furniture.append({'type': 'almirah', 'pos': [MAP_SIZE-100, MAP_SIZE-500, 0], 'rot': 90, 'size': [120, 80, 250]})
     
-    # Room 2: Top Left (Near North and West Walls)
-    furniture.append({'type': 'sofa', 'pos': [-800, 2300, 0], 'rot': 0, 'size': [250, 100, 60]})
-    furniture.append({'type': 'almirah', 'pos': [-2300, 500, 0], 'rot': -90, 'size': [120, 80, 250]})
+    # Room 2: North-West Corner
+    furniture.append({'type': 'sofa', 'pos': [-MAP_SIZE+300, MAP_SIZE-150, 0], 'rot': 0, 'size': [250, 100, 60]})
+    furniture.append({'type': 'almirah', 'pos': [-MAP_SIZE+100, MAP_SIZE-500, 0], 'rot': -90, 'size': [120, 80, 250]})
     
-    # Room 3: Bottom Left (Near South and West Walls)
-    furniture.append({'type': 'bed', 'pos': [-2200, -1000, 0], 'rot': 90, 'size': [200, 120, 50]})
-    furniture.append({'type': 'sofa', 'pos': [-500, -2300, 0], 'rot': 180, 'size': [250, 100, 60]})
+    # Room 3: South-West Corner
+    furniture.append({'type': 'bed', 'pos': [-MAP_SIZE+250, -MAP_SIZE+250, 0], 'rot': 90, 'size': [200, 120, 50]})
     
-    # Room 4: Bottom Right (Near South and East Walls)
-    furniture.append({'type': 'almirah', 'pos': [2300, -500, 0], 'rot': 90, 'size': [120, 80, 250]})
-    furniture.append({'type': 'sofa', 'pos': [600, -2300, 0], 'rot': 180, 'size': [250, 100, 60]})
-    
-    # Scattered Vases (Only in Corners)
-    furniture.append({'type': 'vase', 'pos': [2300, 2300, 0], 'rot': 0, 'size': [40, 40, 100]})
-    furniture.append({'type': 'vase', 'pos': [-2300, 2300, 0], 'rot': 0, 'size': [40, 40, 100]})
-    furniture.append({'type': 'vase', 'pos': [2300, -2300, 0], 'rot': 0, 'size': [40, 40, 100]})
-
-    # Dining Area (Tucked away from the center)
-    table_pos = [1800, -1800, 0]
+    # Dining Area (South-East Corner)
+    table_pos = [MAP_SIZE-600, -MAP_SIZE+600, 0]
     furniture.append({'type': 'dining_table', 'pos': table_pos, 'rot': 0, 'size': [250, 150, 75]})
-    furniture.append({'type': 'chair', 'pos': [table_pos[0], table_pos[1]+100, 0], 'rot': 180, 'size': [40, 40, 90]})
-    furniture.append({'type': 'chair', 'pos': [table_pos[0], table_pos[1]-100, 0], 'rot': 0, 'size': [40, 40, 90]})
-    furniture.append({'type': 'dining_chandelier', 'pos': [1800, -1800, 250], 'rot': 0, 'size': [100, 100, 100]})
+    furniture.append({'type': 'dining_chandelier', 'pos': [table_pos[0], table_pos[1], 250], 'rot': 0, 'size': [100, 100, 100]})
 
-    # --- End Furniture ---
-
-    # Init Internal Walls 
+    # Simplified internal walls to prevent blocking
     walls = []
-    door_width = 200  
     wall_thickness = 20
-    door_spacing = 400  
-
-    # Cross-shaped partitions remains to define rooms, but middle is empty
-    walls.append({'x1': -wall_thickness/2, 'y1': door_spacing + door_width/2, 'x2': wall_thickness/2, 'y2': MAP_SIZE, 'is_door': False})
-    walls.append({'x1': -wall_thickness/2, 'y1': -door_spacing - door_width/2, 'x2': wall_thickness/2, 'y2': -door_spacing + door_width/2, 'is_door': False})
-    walls.append({'x1': -wall_thickness/2, 'y1': door_spacing - door_width/2, 'x2': wall_thickness/2, 'y2': door_spacing + door_width/2, 'is_door': False})
-    walls.append({'x1': -wall_thickness/2, 'y1': -MAP_SIZE, 'x2': wall_thickness/2, 'y2': -door_spacing - door_width/2, 'is_door': False})
-    walls.append({'x1': door_spacing + door_width/2, 'y1': -wall_thickness/2, 'x2': MAP_SIZE, 'y2': wall_thickness/2, 'is_door': False})
-    walls.append({'x1': -door_spacing - door_width/2, 'y1': -wall_thickness/2, 'x2': -door_spacing + door_width/2, 'y2': wall_thickness/2, 'is_door': False})
-    walls.append({'x1': door_spacing - door_width/2, 'y1': -wall_thickness/2, 'x2': door_spacing + door_width/2, 'y2': wall_thickness/2, 'is_door': False})
-    walls.append({'x1': -MAP_SIZE, 'y1': -wall_thickness/2, 'x2': -door_spacing - door_width/2, 'y2': wall_thickness/2, 'is_door': False})
+    # Central North Wall
+    walls.append({'x1': -wall_thickness/2, 'y1': 600, 'x2': wall_thickness/2, 'y2': MAP_SIZE})
+    # Central South Wall
+    walls.append({'x1': -wall_thickness/2, 'y1': -MAP_SIZE, 'x2': wall_thickness/2, 'y2': -600})
 
     # Init Pickups
     ammo_pickups = []
     for _ in range(PICKUP_COUNT):
         ammo_pickups.append({
-            'pos': [random.uniform(-MAP_SIZE+100, MAP_SIZE-100), random.uniform(-MAP_SIZE+100, MAP_SIZE-100), 10],
+            'pos': [random.uniform(-MAP_SIZE+200, MAP_SIZE-200), random.uniform(-MAP_SIZE+200, MAP_SIZE-200), 10],
             'rotation': 0
         })
-# Call init once at start
+
 init_game()
 
 def draw_text(x, y, text):
@@ -763,7 +738,7 @@ def draw_picture_frame(x, y, z, width, height, orientation='north'):
 def draw_chandelier():
     """Draw a large chandelier in the center of the house"""
     glPushMatrix()
-    glTranslatef(0, 0, 250)  
+    glTranslatef(0, 0, 325)  
     
     # Central chain/rod (Dark metal) - extends upward
     glColor3f(0.2, 0.2, 0.2)
@@ -1130,7 +1105,8 @@ def draw_character():
     glColor3f(0.25, 0.2, 0.1)
     glPushMatrix(); glTranslatef(0, 0, 50); glScalef(1, 0.8, 1.8); gluSphere(gluNewQuadric(), 25, 12, 12); glPopMatrix()
     # Head
-    glPushMatrix(); glTranslatef(0, 0, 95); glColor3f(0.5, 0.4, 0.3); glScalef(1.1, 1, 1.2); glutSolidCube(40); glPopMatrix()
+    if not is_first_person:
+        glPushMatrix(); glTranslatef(0, 0, 95); glColor3f(0.5, 0.4, 0.3); glScalef(1.1, 1, 1.2); glutSolidCube(40); glPopMatrix()
 
 
     
@@ -1230,10 +1206,12 @@ def showScreen():
         draw_text(380, 410, "[F]     - Toggle Flashlight")
         draw_text(380, 380, "[WASD]  - Move Mono")
         draw_text(380, 350, "[ARROWS]- Adjust Camera")
+        draw_text(380, 320, "[E]     - Toggle Camera")
+
         
         # Make the "Start" prompt blink using simple math
         if (int(glutGet(GLUT_ELAPSED_TIME) / 500) % 2 == 0):
-            draw_text(360, 250, "PRESS SPACE TO START THE GAME")
+            draw_text(360, 250, "PRESS E TO START THE GAME")
             
     elif game_won:
         draw_text(350, 400, "RESCUED, YOU WIN")
@@ -1255,51 +1233,93 @@ def showScreen():
     glutSwapBuffers()
 
 def setupCamera():
-    global intro_factor, intro_finished
+    global intro_factor, intro_finished, is_first_person
     
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
-    gluPerspective(65, 1.25, 1.0, 5000)
+    
+    # Use a wider Field of View for First Person to see more around you
+    fov = 95 if is_first_person else 65
+    gluPerspective(fov, 1.25, 1.0, 5000)
+    
     glMatrixMode(GL_MODELVIEW)
     glLoadIdentity()
     
-    # Target Position (The usual behind-the-head logic)
-    cam_dist = 450
     rad = math.radians(char_rotation)
-    target_x = (char_pos[0] - cam_dist * math.cos(rad)) + (camera_pan * math.sin(rad))
-    target_y = (char_pos[1] - cam_dist * math.sin(rad)) - (camera_pan * math.cos(rad))
-    target_z = camera_pos[2]
 
-    if not intro_finished:
-        # Linear Interpolation (LERP) formula: start + (target - start) * factor
-        current_x = camera_start_pos[0] + (target_x - camera_start_pos[0]) * intro_factor
-        current_y = camera_start_pos[1] + (target_y - camera_start_pos[1]) * intro_factor
-        current_z = camera_start_pos[2] + (target_z - camera_start_pos[2]) * intro_factor
+    if is_first_person:
+        # --- FIRST PERSON LOGIC ---
+        # Position camera at Mono's head height
+        cx = char_pos[0] + 25 * math.cos(rad) # Offset forward slightly
+        cy = char_pos[1] + 25 * math.sin(rad)
+        cz = 90 # Head height
         
-        # Increase factor until 1.0
-        intro_factor += intro_speed
-        if intro_factor >= 1.0:
-            intro_factor = 1.0
-            intro_finished = True
+        # Look forward based on rotation
+        tx = cx + 100 * math.cos(rad)
+        ty = cy + 100 * math.sin(rad)
+        tz = cz
+        
+        # ACTUALLY CALL gluLookAt here
+        gluLookAt(cx, cy, cz, tx, ty, tz, 0, 0, 1)
+    
     else:
-        current_x, current_y, current_z = target_x, target_y, target_z
+        # --- THIRD PERSON LOGIC ---
+        ideal_cam_dist = 450
+        target_x = (char_pos[0] - ideal_cam_dist * math.cos(rad)) + (camera_pan * math.sin(rad))
+        target_y = (char_pos[1] - ideal_cam_dist * math.sin(rad)) - (camera_pan * math.cos(rad))
+        target_z = camera_pos[2]
 
-    gluLookAt(current_x, current_y, current_z, 
-              char_pos[0], char_pos[1], char_pos[2] + 50, 
-              0, 0, 1)
+        actual_dist = ideal_cam_dist
+        if abs(target_x) > MAP_SIZE - 30 or abs(target_y) > MAP_SIZE - 30:
+            actual_dist = 150 
+
+        target_x = (char_pos[0] - actual_dist * math.cos(rad)) + (camera_pan * math.sin(rad))
+        target_y = (char_pos[1] - actual_dist * math.sin(rad)) - (camera_pan * math.cos(rad))
+
+        if not intro_finished:
+            current_x = camera_start_pos[0] + (target_x - camera_start_pos[0]) * intro_factor
+            current_y = camera_start_pos[1] + (target_y - camera_start_pos[1]) * intro_factor
+            current_z = camera_start_pos[2] + (target_z - camera_start_pos[2]) * intro_factor
+            intro_factor += intro_speed
+            if intro_factor >= 1.0:
+                intro_factor = 1.0
+                intro_finished = True
+            cx, cy, cz = current_x, current_y, current_z
+        else:
+            cx, cy, cz = target_x, target_y, target_z
+
+        # Target point is Mono's chest area
+        tx, ty, tz = char_pos[0], char_pos[1], char_pos[2] + 50
+        
+        gluLookAt(cx, cy, cz, tx, ty, tz, 0, 0, 1)
 
 def keyboardListener(key, x, y):
-    global char_pos, char_rotation, flashlight_on, ammo_count, bullets, game_won, game_started
+    global char_pos, char_rotation, flashlight_on, ammo_count, bullets, game_won, game_started, is_first_person
+    
+    # 1. Camera Intro Lock (Wait for cinematic to finish)
     if not intro_finished:
         return
-    # 2. Handle Start Game
+        
+    key = key.lower()
+    
+    # 2. HANDLE THE 'E' KEY LOGIC
+    if key == b'e':
+        if not game_started:
+            # First press: Starts game AND goes First Person
+            game_started = True
+            is_first_person = True
+        else:
+            # Subsequent presses: Just toggles camera
+            is_first_person = not is_first_person
+        return
+
+    # 3. HANDLE START GAME (Traditional Spacebar Start)
     if not game_started:
         if key == b' ':
             game_started = True
-        return # Don't allow other actions in the menu
-    # Handle both cases
-    key = key.lower()
-    
+        return 
+
+    # 4. GAMEPLAY CONTROLS
     if key == b'r':
         init_game()
         return
@@ -1321,34 +1341,35 @@ def keyboardListener(key, x, y):
         ny -= move_speed * math.sin(rad)
         
     if not check_collision(nx, ny, 25):
-        char_pos[0] = nx
-        char_pos[1] = ny
+        char_pos[0], char_pos[1] = nx, ny
+        
     if key == b'a': char_rotation += 7
     if key == b'd': char_rotation -= 7
     if key == b'f': flashlight_on = not flashlight_on
     if key == b' ' and ammo_count > 0:
         ammo_count -= 1
-        # Start bullet from front of player (offset from center)
-        b_rad = math.radians(char_rotation)
-        bx = char_pos[0] + 30 * math.cos(b_rad)
-        by = char_pos[1] + 30 * math.sin(b_rad)
+        bx = char_pos[0] + 30 * math.cos(rad)
+        by = char_pos[1] + 30 * math.sin(rad)
         bullets.append({'pos': [bx, by, 55], 'angle': char_rotation})
-    
+            
     if key == b'p' and door_visible:
         # Check distance to door
         dist = math.sqrt((char_pos[0] - door_pos[0])**2 + (char_pos[1] - door_pos[1])**2)
         if dist < 150:
             game_won = True
+
+
 def show_controls_menu():
 
     draw_text(400, 500, "--- MONO: Little Nightmare ---")
-    draw_text(380, 450, "[SPACE]  - Start Game / Shoot")
+    draw_text(380, 450, "[SPACE]  - Shoot")
     draw_text(380, 420, "[V]      - Reload Ammo")
     draw_text(380, 390, "[F]      - Toggle Flashlight")
     draw_text(380, 360, "[WASD]   - Move Mono")
     draw_text(380, 330, "[ARROWS] - Adjust Camera")
+    draw_text(380,300, "[E]      - Toggle Camera")
     
-    draw_text(370, 250, "PRESS SPACE TO ENTER THE DARKNESS")
+    draw_text(370, 250, "PRESS E TO ENTER THE DARKNESS")
 def specialKeyListener(key, x, y):
     global camera_pos, camera_pan
     if key == GLUT_KEY_UP: camera_pos[2] += 20
